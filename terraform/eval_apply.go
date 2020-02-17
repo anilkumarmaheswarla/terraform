@@ -561,9 +561,22 @@ func (n *EvalApplyProvisioners) apply(ctx EvalContext, provs []*configs.Provisio
 		provisioner := ctx.Provisioner(prov.Type)
 		schema := ctx.ProvisionerSchema(prov.Type)
 
-		forEach, forEachDiags := evaluateResourceForEachExpression(n.ResourceConfig.ForEach, ctx)
-		diags = diags.Append(forEachDiags)
-		keyData := EvalDataForInstanceKey(instanceAddr.Key, forEach)
+		var keyData InstanceKeyEvalData
+		switch {
+		case n.When == configs.ProvisionerWhenDestroy:
+			// if this is a destroy provisioner, we can only know the Key value
+			// itself, which is contained in the address
+			switch key := instanceAddr.Key.(type) {
+			case addrs.StringKey:
+				keyData.EachKey = cty.StringVal(string(key))
+			case addrs.IntKey:
+				keyData.CountIndex = cty.NumberIntVal(int64(key))
+			}
+		default:
+			forEach, forEachDiags := evaluateResourceForEachExpression(n.ResourceConfig.ForEach, ctx)
+			diags = diags.Append(forEachDiags)
+			keyData = EvalDataForInstanceKey(instanceAddr.Key, forEach)
+		}
 
 		// Evaluate the main provisioner configuration.
 		config, _, configDiags := ctx.EvaluateBlock(prov.Config, schema, instanceAddr, keyData)
